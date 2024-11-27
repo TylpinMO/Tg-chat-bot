@@ -82,12 +82,16 @@ async def homie_handler(message: Message):
         await message.reply(
             f"@{username}, ты получил {points_gained} карамелек. Всего у тебя {user_points} карамелек!"
         )
+    # Удаляем сообщение с командой
+    await message.delete()
 
 # Хэндлер для команды /statshomie
 @dp.message(F.text == "/statshomie@HomieHahBot")
 async def stats_handler(message: Message):
     stats_message = generate_stats()
     await message.reply(stats_message)
+    # Удаляем сообщение с командой
+    await message.delete()
 
 # Главная функция для запуска бота
 async def main():
