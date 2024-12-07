@@ -1,138 +1,120 @@
-from aiogram import Dispatcher
-from aiogram.types import Message
-from utils import (
-    update_homie_points, 
-    generate_stats, 
-    create_room, 
-    join_room, 
-    leave_room, 
-    start_game, 
-    list_rooms, 
-    rooms,
-    update_balances,
-    next_turn,
-    is_game_over
-)
+import requests
+import random
 
-def register_handlers(dp: Dispatcher):
-    # --- Команды работы с карамельками ---
-    @dp.message(commands=["homie"])
-    async def homie_handler(message: Message):
-        user_id = message.from_user.id
-        username = message.from_user.username or message.from_user.first_name
+from datetime import datetime, timedelta
+from utils.storage import get_user_data, update_user_data
+from telegram import Update
+from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
+from utils.horoscope_data import get_horoscope
+from config import WEATHER_API_KEY
 
-        result = update_homie_points(user_id, username)
-        if result is None:
-            await message.reply("Ты уже получал карамельки за последние 6 часов. Попробуй позже!")
-        else:
-            user_points, points_gained = result
-            await message.reply(
-                f"@{username}, ты получил {points_gained} карамелек. Всего у тебя {user_points} карамелек!"
-            )
-        await message.delete()
+# Состояние для ввода знака зодиака
+ASK_SIGN = 1
 
-    @dp.message(commands=["statshomie"])
-    async def stats_handler(message: Message):
-        stats_message = generate_stats()
-        await message.reply(stats_message)
-        await message.delete()
+# Обработчик команды /points
+async def points(update, context):
+  user_id = update.effective_user.id
+  user_data = get_user_data(user_id)
+  
+  last_points_time = user_data.get("last_points")
+  now = datetime.now()
+  
+  if last_points_time:
+    last_points_time = datetime.fromisoformat(last_points_time)
+    if now - last_points_time < timedelta(hours=6):
+      remaining_time = timedelta(hours=6) - (now - last_points_time)
+      hours, remainder = divmod(remaining_time.seconds, 3600)
+      minutes, _ = divmod(remainder, 60)
+      await update.message.reply_text(
+        f"Вы уже получали тубрики. Следующие можно будет получить через {hours} ч. {minutes} мин."
+      )
+      return
 
-    # --- Команды для игры в Блэкджек ---
-    @dp.message(commands=["blackjack"])
-    async def blackjack_handler(message: Message):
-        room_id = create_room(message.from_user.id)
-        await message.reply(f"Комната #{room_id} создана! Присоединяйтесь с помощью /join {room_id}.")
+  # Генерация случайного количества тубриков
+  earned_points = random.randint(1, 100)
+  new_balance = user_data["balance"] + earned_points
+  update_user_data(user_id, balance=new_balance, last_points=now.isoformat())
 
-    @dp.message(commands=["join"])
-    async def join_handler(message: Message):
-        args = message.text.split()
-        if len(args) != 2:
-            await message.reply("Укажите ID комнаты: /join [ID комнаты]")
-            return
+  await update.message.reply_text(
+    f"Вы получили {earned_points} тубриков! Ваш текущий баланс: {new_balance} тубриков."
+  )
 
-        room_id = args[1]
-        user_id = message.from_user.id
-        username = message.from_user.username or message.from_user.first_name
+# Обработчик команды /horoscope
+async def horoscope(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await update.message.reply_text("Введите ваш знак зодиака (например: Овен, Телец, Близнецы):")
+  return ASK_SIGN
 
-        result = join_room(room_id, user_id, username)
-        await message.reply(result)
+# Обработчик ввода знака зодиака
+async def get_sign(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  user_sign = update.message.text.capitalize()
+  horoscope_text = get_horoscope(user_sign)
+  await update.message.reply_text(horoscope_text)
+  return ConversationHandler.END
 
-    @dp.message(commands=["leave"])
-    async def leave_handler(message: Message):
-        user_id = message.from_user.id
-        result = leave_room(user_id)
-        await message.reply(result)
+# Команда /weatherMOS
+async def weather_mos(update, context):
+  city = "Moscow"
+  url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&units=metric&lang=ru&appid={WEATHER_API_KEY}"
+  
+  try:
+    response = requests.get(url)
+    data = response.json()
+    
+    if data["cod"] == 200:
+      city_name = data["name"]
+      temp = data["main"]["temp"]
+      weather = data["weather"][0]["description"]
+      
+      message = (
+        f"Погода в {city_name}:\n"
+        f"🌡 Температура: {temp}°C\n"
+        f"🌥 Описание: {weather.capitalize()}"
+      )
+    else:
+      message = f"Не удалось получить данные о погоде для {city}. Проверьте название города."
+  except Exception as e:
+    message = "Ошибка при запросе погоды. Попробуйте позже."
+    print(f"Ошибка: {e}")
+    
+  await update.message.reply_text(message)
 
-    @dp.message(commands=["rooms"])
-    async def rooms_handler(message: Message):
-        rooms_list = list_rooms()
-        await message.reply(rooms_list)
+# Команда /weatherROS
+async def weather_ros(update, context):
+  city = "Rostov-on-Don"
+  url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&units=metric&lang=ru&appid={WEATHER_API_KEY}"
+  
+  try:
+    response = requests.get(url)
+    data = response.json()
+    
+    if data["cod"] == 200:
+      city_name = data["name"]
+      temp = data["main"]["temp"]
+      weather = data["weather"][0]["description"]
+      
+      message = (
+        f"Погода в {city_name}:\n"
+        f"🌡 Температура: {temp}°C\n"
+        f"🌥 Описание: {weather.capitalize()}"
+      )
+    else:
+      message = f"Не удалось получить данные о погоде для {city}. Проверьте название города."
+  except Exception as e:
+    message = "Ошибка при запросе погоды. Попробуйте позже."
+    print(f"Ошибка: {e}")
+    
+  await update.message.reply_text(message)
 
-    @dp.message(commands=["bet"])
-    async def bet_handler(message: Message):
-        args = message.text.split()
-        if len(args) != 2 or not args[1].isdigit():
-            await message.reply("Укажите ставку в карамельках: /bet [ставка]")
-            return
-
-        bet = int(args[1])
-        user_id = message.from_user.id
-
-        for room_id, room in rooms.items():
-            if room.status == "waiting" and user_id in room.players:
-                response = room.place_bet(user_id, bet)
-                await message.reply(response)
-                return
-
-        await message.reply("Вы не подключены к комнате или игра уже началась.")
-
-    @dp.message(commands=["start"])
-    async def start_handler(message: Message):
-        user_id = message.from_user.id
-        for room_id, room in rooms.items():
-            if room.owner == user_id and room.status == "waiting":
-                response = start_game(room_id)
-                await message.reply(response)
-                return
-
-        await message.reply("Вы не являетесь создателем комнаты или игра уже началась.")
-
-    @dp.message(commands=["hit"])
-    async def hit_handler(message: Message):
-        user_id = message.from_user.id
-        for room_id, room in rooms.items():
-            if room.status == "playing" and room.current_turn == user_id:
-                response = room.hit(user_id)
-                await message.reply(response)
-
-                if room.players[user_id]["status"] == "busted":
-                    room.current_turn = next_turn(room, user_id)
-                if is_game_over(room):
-                    room.dealer_turn()
-                    results = room.determine_results()
-                    update_balances(room)
-                    room.status = "finished"
-                    await message.reply(f"Игра окончена!\n\n{results}")
-                return
-
-        await message.reply("Сейчас не ваш ход или вы не участвуете в игре.")
-
-    @dp.message(commands=["stand"])
-    async def stand_handler(message: Message):
-        user_id = message.from_user.id
-        for room_id, room in rooms.items():
-            if room.status == "playing" and room.current_turn == user_id:
-                response = room.stand(user_id)
-                await message.reply(response)
-
-                room.current_turn = next_turn(room, user_id)
-
-                if is_game_over(room):
-                    room.dealer_turn()
-                    results = room.determine_results()
-                    update_balances(room)
-                    room.status = "finished"
-                    await message.reply(f"Игра окончена!\n\n{results}")
-                return
-
-        await message.reply("Сейчас не ваш ход или вы не участвуете в игре.")
+# Команда /happyny
+async def happyny(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now()
+    new_year = datetime(year=now.year + 1, month=1, day=1)
+    remaining_time = new_year - now
+    days = remaining_time.days
+    hours, remainder = divmod(remaining_time.seconds, 3600)
+    minutes, _ = divmod(remainder, 60)
+    message = (
+        f"До Нового года осталось {days}д:{hours}ч:{minutes}м. "
+        f"Пора думать, как будем тусить! 🎉"
+    )
+    await update.message.reply_text(message)
