@@ -2,7 +2,7 @@ import logging
 
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
 from config import BOT_TOKEN
-from handlers import happyny, weather_ros, weather_mos, horoscope, get_sign, ASK_SIGN, points
+from handlers import happyny, weather_ros, weather_mos, horoscope, get_sign, ASK_SIGN, points, mystat, blackjack, join, leave, rooms
 
 logging.basicConfig(
   format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -17,6 +17,11 @@ def main():
     app.add_handler(CommandHandler("weatherROS", weather_ros)) # Погода в Ростове
     app.add_handler(CommandHandler("weatherMOS", weather_mos)) # Погода в Москве
     app.add_handler(CommandHandler("points", points)) # Получение тубриков
+    app.add_handler(CommandHandler("mystat", mystat)) # Получение статистики
+    app.add_handler(CommandHandler("blackjack", blackjack)) # Создать комнату
+    app.add_handler(CommandHandler("join", join)) # Присоединиться к комнате
+    app.add_handler(CommandHandler("leave", leave)) # Покинуть комнату
+    app.add_handler(CommandHandler("rooms", rooms)) # Список доступных комнат
     
     # Обработчик для /horoscope
     horoscope_handler = ConversationHandler(

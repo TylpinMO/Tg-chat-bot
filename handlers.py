@@ -2,7 +2,7 @@ import requests
 import random
 
 from datetime import datetime, timedelta
-from utils.storage import get_user_data, update_user_data
+from utils.storage import get_user_data, update_user_data, create_room, get_room, join_room, leave_room, list_rooms, ROOMS
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from utils.horoscope_data import get_horoscope
@@ -10,6 +10,85 @@ from config import WEATHER_API_KEY
 
 # Состояние для ввода знака зодиака
 ASK_SIGN = 1
+
+# Обработчик команды /blackjack
+async def blackjack(update, context):
+  user_id = update.effective_user.id
+  room_id = str(random.randint(1000, 9999)) # Генерация ID комнаты
+  create_room(room_id, user_id)
+  await update.message.reply_text(
+    f"Комната создана! Ваш ID комнаты: {room_id}\n"
+    f"Другие игроки могут подключиться, введя /join {room_id}"
+  )
+  
+# Обработчик команды /join
+async def join(update, context):
+  user_id = update.effective_user.id
+  room_id = " ".join(context.args)
+  
+  if not room_id:
+    await update.message.reply_text("Укажите ID комнаты: /join [ID]")
+    return
+  
+  room = get_room(room_id)
+  if not room:
+    await update.message.reply_text(f"Комнаты с ID {room_id} не существует.")
+    return
+  
+  if join_room(room_id, user_id):
+    current_players = len(room["players"])
+    max_players = 4
+    await update.message.reply_text(
+      f"Вы присоединились к комнате {room_id}. Игроков: {current_players}/{max_players}."
+    )
+  else:
+    await update.message.reply_text("Не удалось подключиться к комнате. Возможно она заполнена или уже началась.")
+    
+# Обработчик команды /leave
+async def leave(update, context):
+  user_id = update.effective_user.id
+  for room_id in list(ROOMS.keys()): # Используем глобальный список комнат
+    room = get_room(room_id)
+    if room and user_id in room["players"]:
+      leave_room(room_id, user_id)
+      await update.message.reply_text(f"Вы покинули комнату {room_id}.")
+      return
+  await update.message.reply_text("Вы не находитесь ни в одной комнате.")
+  
+# Обработчик команды /rooms
+async def rooms(update, context):
+  rooms_list = list_rooms()
+  if not rooms_list:
+    await update.message.reply_text("Нет доступных комнат.")
+    return
+  
+  message = "Доступные комнаты:\n"
+  for room in rooms_list:
+    message += f"ID: {room['room_id']} - Игроков: {room['players']}/{room['max_players']}\n"
+    
+  await update.message.reply_text(message)
+
+# Обработчик команды /mystat
+async def mystat(update, context):
+  user_id = update.effective_user.id
+  username = update.effective_user.first_name
+  user_data = get_user_data(user_id)
+  
+  balance = user_data.get("balance", 0)
+  games_played = user_data.get("games_played", 0)
+  wins = user_data.get("wins", 0)
+  losses = user_data.get("losses", 0)
+  ties = user_data.get("ties", 0)
+  
+  message = (
+        f"📊 *{username}, Ваша статистика:*\n\n"
+        f"💰 Баланс: {balance} тубриков\n"
+        f"🎮 Сыграно игр: {games_played}\n"
+        f"🏆 Побед: {wins}\n"
+        f"❌ Поражений: {losses}\n"
+        f"🤝 Ничьих: {ties}"
+  )
+  await update.message.reply_text(message, parse_mode="Markdown")
 
 # Обработчик команды /points
 async def points(update, context):
